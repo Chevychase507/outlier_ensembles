@@ -4,7 +4,9 @@ from scipy import stats
 import math
 import sys
 from sklearn.metrics import confusion_matrix, roc_auc_score, precision_recall_curve, auc
-from sklearn.model_selection import train_test_split, GridSearchCV, StratifiedKFold
+from sklearn.model_selection import train_test_split, StratifiedKFold
+
+#some sklearn methods print annoying warnings 
 import warnings
 warnings.filterwarnings("ignore", category=FutureWarning)
 warnings.filterwarnings("ignore", category=UserWarning)
@@ -12,13 +14,12 @@ warnings.filterwarnings("ignore", category=UserWarning)
 
 def sort_by_variance(df, feats, t, desc):
     """
-    Takes a df and a list of feats. It sorts the list of feats by their variance
-    in descending order. It returns a sorted list of feats whose variance is above t.
-
+    Takes a df, athreshold t, a list of features and a boolean deciding on the
+    direction of the sort. Sorts the list of features by their variance in
+    descending/ascending order. It returns a sorted list of feats whose variance
+    is above t.
     """
-
-    var_list = []
-    cand_feats = []
+    var_list, cand_feats = [],[]
 
     for i in range(len(feats)):
         col = np.array(df[feats[i]])
@@ -27,9 +28,7 @@ def sort_by_variance(df, feats, t, desc):
             var_list.append(var)
             cand_feats.append(feats[i])
 
-
-    sorted_feats = [x for _,x in sorted(zip(var_list,cand_feats), reverse=True)]
-    #sorted_feats = [x for _,x in sorted(zip(var_list,cand_feats))]
+    sorted_feats = [x for _,x in sorted(zip(var_list,cand_feats), reverse=desc)]
 
     return sorted_feats
 
@@ -37,51 +36,58 @@ def sort_by_variance(df, feats, t, desc):
 
 def top_k(pred_i, the_labels, k):
     """
-    Finds the ratio of outliers in the top k anomaly scores
+    Takes a 1d list of anomaly scores, the label and the number of true
+    outliers in the data set k. Returns the ratio of outliers in the top k
+    anomaly scores.
     """
     tmp_lab = the_labels
-
     sort_lab = np.array([x for _,x in sorted(zip(pred_i,tmp_lab), reverse=True)])
     sort_pred = sorted(pred_i, reverse=True)
-
-    sort_pred = sorted(pred_i, reverse=True)
     cnts = (sort_lab[:k] == -1).sum()
-
 
     return cnts / k
 
 
-def sign_change(lab):
-    tmp = np.zeros(len(lab))
-    tmp[np.where(lab == 1)] = -1
-    tmp[np.where(lab == -1)] = 1
-    return tmp
+def sign_change(labels):
+    """
+    Takes a list of labels and changes their signs. Returns the sing changed
+    labels.
+    """
+    changed = np.zeros(len(labels))
+    changed[np.where(labels == 1)] = -1
+    changed[np.where(labels == -1)] = 1
+    return changed
 
 
 def comb_by_avg(preds):
-    comb = np.mean(preds, axis=0)
-    return comb
+    """
+    Takes a 2d array of anomaly scores and returns the average values
+    in a 1d array.
+    """
+    return np.mean(preds, axis=0)
 
 def comb_by_min(preds):
-    #comb = np.max(preds, axis=0)
-    comb = np.min(preds, axis=0)
-    return comb
+    """
+    Takes a 2d array of anomaly scores and returns the min (works as max
+    for negative values) values in a 1d array.
+    """
+    return np.min(preds, axis=0)
 
-def comb_by_logmean(preds):
-    log_preds = np.log2(np.array(preds) + 0.000001)
-    comb = np.mean(log_preds, axis=0)
-    return comb
 
 def comb_by_thresh(z_preds):
+    """
+    Takes a 2d array of z-scored anomaly scores and returns the average values
+    of all values above 0 in a 1d array.
+    """
     thresh = z_preds
     thresh[thresh < 0] = 0
-    comb = np.sum(thresh, axis=0)
-    return comb
+    return np.mean(thresh, axis=0)
 
 
 def extreme_vals(preds, mu):
     """
-    takes z-scored only
+    Takes a 2d array of z-scored anomaly scores and returns the average values
+    of all values above above or below mu in a 1d array.
     """
     ext_preds = [None] * len(preds)
 
@@ -96,6 +102,11 @@ def extreme_vals(preds, mu):
 
 
 def z_score(preds):
+    """
+    Takes a 2d np array of anomaly scores. Returns the z-score normalized
+    anomaly scores
+    """
+
     z_preds = [None] * len(preds)
     for i in range(len(preds)):
         if len(set(preds[i])) <= 1: # check if all elements are equal
@@ -106,9 +117,10 @@ def z_score(preds):
     return np.array(z_preds)
 
 
-
-
 def rank(preds):
+    """
+    Takes a 2d np array of anomaly scores. Returns the ranks of the anomaly scores
+    """
 
     ranks = [None] * len(preds)
     for i in range(len(preds)):
@@ -122,7 +134,8 @@ def rank(preds):
 
 def min_max(preds):
     """
-    min max normalization of multiple lists of predictions
+    Takes a 2d np array of anomaly scores. Returns the min-max normalized
+    anomaly scores.
     """
     norm_preds = [None] * len(preds)
     for i in range(len(preds)):
@@ -135,38 +148,51 @@ def min_max(preds):
     return np.array(norm_preds)
 
 
-def cantelli_pred(preds):
-    can_pred = [None] * len(preds)
+def loc_thresh(preds):
+    """
+    Takes a 2d np array of anomaly scores. Returns the predicted class
+    of the instance according to the decision function based on
+    Cantellis inequality.
+    """
+
+    loc_ = [None] * len(preds)
     for i in range(len(preds)):
         can_pred[i] = decision_func(preds[i], 2)
     return can_pred
 
-def decision_func(preds, k):
+def decision_func(preds_i, k):
     """
-    following Cantelli's inequality
+    Takes a 1d array of anomaly scores. Each score that is below k std. dev from
+    the mean is set to -1, and the rest is set to 1. Returns the binary
+    predicted scores.
     """
-    preds = np.array(preds)
-    mean = np.median(preds)
-    std_dev = np.std(preds)
-    #print(mean, std_dev, mean + k * std_dev)
-    idx = np.where(preds < (mean - k * std_dev))
-    result = np.full(len(preds), 1)
+
+    preds_i = np.array(preds_i)
+    mean = np.median(preds_i)
+    std_dev = np.std(preds_i)
+
+    idx = np.where(preds_i < (mean - k * std_dev))
+    result = np.full(len(preds_i), 1)
     result[idx] = -1
 
     return result
 
 
-def majority_vote(cant_pred):
+def majority_vote(can_preds):
+    """
+    Takes a 2d array of binary anomaly scores. Combines the scores by majority
+    voting. Returns a 1d array of the majority votes
+    """
 
-    if len(cant_pred) % 2 == 0:
-        raise ValueError("cant_pred should contain an unequal number of predictions")
+    if len(can_preds) % 2 == 0:
+        raise ValueError("can_preds should contain an unequal number of predictions")
 
-    majority = [None] * len(cant_pred[0])
-    for i in range(len(cant_pred[0])):
+    majority = [None] * len(can_preds[0])
+    for i in range(len(can_preds[0])):
         anorm = 0
         norm = 0
-        for j in range(len(cant_pred)):
-            if cant_pred[j][i] == 1:
+        for j in range(len(can_preds)):
+            if can_preds[j][i] == 1:
                 norm += 1
             else:
                 anorm += 1
@@ -179,75 +205,17 @@ def majority_vote(cant_pred):
 
 
 
-def param_search_fpof(data, labels, k, Estimator):
-    """
-    for fpof_sampler
-    """
-    params = {'t':[10,20,30,40,50], 'n':[2**x for x in range(1,11)], 'm':[5,10,15,20,25,30]}
 
-    labels = sign_change(labels)
-
-    kf = StratifiedKFold(n_splits=k)
-    best_auc = 0
-    best_params = (np.inf, np.inf)
-    curr_params = None
-    for i in range(len(params['t'])):
-        for j in range(len(params['n'])):
-            print("fpof, best_params:", best_params, round(best_auc, 3), "curr params:", curr_params)
-            sum_auc = 0
-            if len(np.unique(data)) > 80: # why 80
-                for l in range(len(params['m'])):
-                    sum_auc = 0
-                    curr_params = (params['t'][i], params['n'][j], params['m'][l])
-                    for train_idx, test_idx in kf.split(data, labels):
-
-                        estimator = Estimator(params['t'][i], params['n'][j], params['m'][l])
-                        pattern_sets = estimator.fit(data[train_idx])
-                        predictions = estimator.predict(data[test_idx], pattern_sets)
-                        p, r, _ = precision_recall_curve(labels[test_idx], np.negative(predictions))
-                        pr_auc = auc(r, p)
-
-
-                        #auc = roc_auc_score(labels[test_idx], np.negative(predictions))
-                        #sum_auc += auc
-                        sum_auc += pr_auc
-
-                    avg_auc = sum_auc / k
-                    if avg_auc > best_auc:
-                        best_auc = avg_auc
-                        best_params = curr_params
-                if best_auc == 1:
-                    return best_params, best_auc
-
-            else:
-                curr_params = (params['t'][i], params['n'][j])
-                for train_idx, test_idx in kf.split(data, labels):
-                    estimator = Estimator(params['t'][i], params['n'][j])
-                    pattern_sets = estimator.fit(data[train_idx])
-                    predictions = estimator.predict(data[test_idx], pattern_sets)
-                    #if len(data) < 300:
-                    #    predictions = np.negative(predictions)
-
-                    #for b in range(len(predictions)):
-                    #    print(label_test[b], predictions[b])
-                    sum_auc += roc_auc_score(labels[test_idx], np.negative(predictions)) # if bad results, flip predictions
-            avg_auc = sum_auc / k
-            if avg_auc > best_auc:
-                best_auc = avg_auc
-                best_params = curr_params
-            elif avg_auc == best_auc:
-                if best_params[0] > params['t'][i] and best_params[1] > params['n'][j]:
-                    best_params = curr_params
-
-            if best_auc == 1:
-                return best_params, best_auc
-
-    return best_params, best_auc
 
 def param_search(data, labels, k, Estimator, model_name):
     """
-    for ocsvm, zero, iForest and LOF
+    Hyperparameter exhaustive grid search method for ocsvm, zero++, iForest and
+    LOF. Takes a data set, the labels, the estimator and the model name.
+    Performs an exhaustive search through all combinations of hyperparameters
+    and returns the best combination along with the PR AUC score.
     """
+
+    #choose the searched hyperparameters
     params = {'t':[10,20,30,40,50,60], 'n':[2**x for x in range(1,9)]}
     if model_name == 'iForest':
         params = {'t':[10,20,30,40,50,60,70,80,90], 'n':[2**x for x in range(1,11)]}
@@ -264,15 +232,21 @@ def param_search(data, labels, k, Estimator, model_name):
     best_params = (np.inf, np.inf)
     curr_params = None
     predictions = None
+
+    #iterate through all combinations
     for i in range(len(params['t'])):
         print(model_name, "best_params:", best_params, round(best_auc, 3), "curr_params:", curr_params)
         for j in range(len(params['n'])):
             curr_params = (params['t'][i], params['n'][j])
+
+            #if the candidate value is larger than the data sample --> break
             if model_name != 'LOF' and model_name !='ocsvm':
                 if params['n'][j] >= (len(data) - len(data) / k):
                     break
             sum_auc = 0
             cnt = 0
+
+            #special third loo+ for ocsvm since it has three parameters
             if model_name == 'ocsvm':
                 for l in range(len(params['nu'])):
                     sum_auc = 0
@@ -287,7 +261,6 @@ def param_search(data, labels, k, Estimator, model_name):
                     if avg_auc > best_auc:
                         best_auc = avg_auc
                         best_params = (params['t'][i], params['n'][j], params['nu'][l])
-
 
             else:
 
@@ -311,11 +284,11 @@ def param_search(data, labels, k, Estimator, model_name):
                     p, r, _ = precision_recall_curve(labels[test_idx], np.negative(predictions))
                     pr_auc = auc(r, p)
 
-                #roc_auc = roc_auc_score(labels[test_idx], np.negative(predictions))
                     cnt += 1
-                #sum_auc += roc_auc
                     sum_auc += pr_auc
+
             avg_auc = sum_auc / k
+
             if avg_auc > best_auc:
                 best_auc = avg_auc
                 best_params = (params['t'][i], params['n'][j])
@@ -329,63 +302,66 @@ def param_search(data, labels, k, Estimator, model_name):
     return best_params, best_auc
 
 
+def param_search_fpof(data, labels, k, Estimator):
+    """
+    Hyperparameter exhaustive grid search method for FPOF. Takes a data set,
+    the labels and the estimator. Performs an exhaustive search through all
+    combinations of hyperparameters and returns the best combination along
+    with the PR AUC score.
+    """
 
-def csv_results_kfold(member_list, ensemble, data, distinct_data, parameters, data_name, k):
+    params = {'t':[10,20,30,40,50], 'n':[2**x for x in range(1,11)],
+    'm':[5,10,15,20,25,30]}
 
-    file_name = data_name + "_results.csv"
+    labels = sign_change(labels)
 
-    with open(file_name, 'w') as out:
-        out.write("algoritm,params,data_set,raw_auroc,norm_auroc,rank_auroc,raw_auprc,norm_auprc,rank_auprc\n")
+    kf = StratifiedKFold(n_splits=k)
+    best_auc = 0
+    best_params = (np.inf, np.inf)
+    curr_params = None
+    for i in range(len(params['t'])):
+        for j in range(len(params['n'])):
+            print("fpof, best_params:", best_params, round(best_auc, 3), "curr params:", curr_params)
+            sum_auc = 0
+            #if the data set contains more than 80 unique literals, it is searched for m.
+            if len(np.unique(data)) > 80:
+                for l in range(len(params['m'])):
+                    sum_auc = 0
+                    curr_params = (params['t'][i], params['n'][j], params['m'][l])
+                    for train_idx, test_idx in kf.split(data, labels):
 
-        kf = StratifiedKFold(n_splits=k)
-        cnt = 0
-        for train_idx, test_idx in kf.split(data, labels):
-            print(str(cnt) + "th epoch")
-            ensemble, fpof_patterns = fit_ensemble(member_list, ensemble, data[train_idx], distinct_data[train_idx])
-            preds = predict_ensemble(member_list, ensemble, data[test_idx], distinct_data[test_idx], fpof_patterns)
-            norm_preds = min_max(preds)
-            rank_preds = rank(preds)
-            #precision, recall, thresholds = precision_recall_curve(labels[test_idx], predictions)
-            #pr_auc = auc(recall, precision)
+                        estimator = Estimator(params['t'][i], params['n'][j], params['m'][l])
+                        pattern_sets = estimator.fit(data[train_idx])
+                        predictions = estimator.predict(data[test_idx], pattern_sets)
+                        p, r, _ = precision_recall_curve(labels[test_idx], np.negative(predictions))
+                        pr_auc = auc(r, p)
+                        sum_auc += pr_auc
 
-            for j in range(len(member_list)):
-                raw_auroc = roc_auc_score(labels[test_idx], preds[j])
-                norm_auroc = roc_auc_score(labels[test_idx], norm_preds[j])
-                rank_auroc = roc_auc_score(labels[test_idx], rank_preds[j])
-                p, r, t = precision_recall_curve(labels[test_idx], preds[j])
-                raw_auprc = auc(r, p)
-                p, r, t = precision_recall_curve(labels[test_idx], norm_preds[j])
-                norm_auprc = auc(r, p)
-                p, r, t = precision_recall_curve(labels[test_idx], rank_preds[j])
-                rank_auprc = auc(r, p)
+                    avg_auc = sum_auc / k
+                    if avg_auc > best_auc:
+                        best_auc = avg_auc
+                        best_params = curr_params
+                if best_auc == 1:
+                    return best_params, best_auc
 
-                out.write(member_list[j] + "," +  str(parameters[member_list[j]]).replace(",", ";") + "," +
-                 data_name + "," + str(raw_auroc) + "," + str(norm_auroc) + "," + str(rank_auroc) +
-                 "," + str(raw_auprc) + "," + str(norm_auprc) + "," + str(rank_auprc) + "\n")
+            else:
+                curr_params = (params['t'][i], params['n'][j])
+                for train_idx, test_idx in kf.split(data, labels):
+                    estimator = Estimator(params['t'][i], params['n'][j])
+                    pattern_sets = estimator.fit(data[train_idx])
+                    predictions = estimator.predict(data[test_idx], pattern_sets)
 
-            #various avg. strategies
-            raw_auroc = roc_auc_score(labels[test_idx], comb_by_avg(preds))
-            norm_auroc = roc_auc_score(labels[test_idx], comb_by_avg(norm_preds))
-            rank_auroc = roc_auc_score(labels[test_idx], comb_by_avg(rank_preds))
-            p, r, t = precision_recall_curve(labels[test_idx], comb_by_avg(preds))
-            raw_auprc = auc(r, p)
-            p, r, t = precision_recall_curve(labels[test_idx], comb_by_avg(norm_preds))
-            norm_auprc = auc(r, p)
-            p, r, t = precision_recall_curve(labels[test_idx], comb_by_avg(rank_preds))
-            rank_auprc = auc(r, p)
-            out.write("ensemble_avg" + "," +  "no ocsvm" + "," + data_name + "," + str(raw_auroc) + "," + str(norm_auroc) + "," + str(rank_auroc) +
-             "," + str(raw_auprc) + "," + str(norm_auprc) + "," + str(rank_auprc) +"\n")
+                    sum_auc += roc_auc_score(labels[test_idx], np.negative(predictions)) # if bad results, flip predictions
+            avg_auc = sum_auc / k
+            if avg_auc > best_auc:
+                best_auc = avg_auc
+                best_params = curr_params
+            elif avg_auc == best_auc:
+                if best_params[0] > params['t'][i] and best_params[1] > params['n'][j]:
+                    best_params = curr_params
 
-            #various min strategies
-            raw_auroc = roc_auc_score(labels[test_idx], comb_by_min(preds))
-            norm_auroc = roc_auc_score(labels[test_idx], comb_by_min(norm_preds))
-            rank_auroc = roc_auc_score(labels[test_idx], comb_by_min(rank_preds))
-            p, r, t = precision_recall_curve(labels[test_idx], comb_by_min(preds))
-            raw_auprc = auc(r, p)
-            p, r, t = precision_recall_curve(labels[test_idx], comb_by_min(norm_preds))
-            norm_auprc = auc(r, p)
-            p, r, t = precision_recall_curve(labels[test_idx], comb_by_min(rank_preds))
-            rank_auprc = auc(r, p)
-            out.write("ensemble_min" + "," +  "no ocsvm" + "," + data_name + "," + str(raw_auroc) + "," + str(norm_auroc) + "," + str(rank_auroc) +
-             "," + str(raw_auprc) + "," + str(norm_auprc) + "," + str(rank_auprc) + "\n")
-            cnt += 1
+            #return the first combination that reaches a score of 1.
+            if best_auc == 1:
+                return best_params, best_auc
+
+    return best_params, best_auc

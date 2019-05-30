@@ -6,19 +6,33 @@ from sklearn.metrics import confusion_matrix, roc_auc_score
 import time
 
 class FPOFSampler:
+    """
+    The class FPOFSampler implements the the F-P Outlier with a sampling
+    extension that makes it scale better. It requires a data set of unique
+    strings. Original F-P Outlier paper:
+    https://pdfs.semanticscholar.org/5f79/d24667a5fc9584c3687569b3b2a75c4f22a7.pdf
 
-    def __init__(self, t, n, m=None, epochs=5, min_sup=10, subspace_sampling=False):
-        #print("t:", t, ", sample size:", n, ", epochs:", epochs, ", m:", m)
+    """
+
+    def __init__(self, t, n, m=None):
+        """
+        Takes t, the number of samples, n, the sample size and possibly m,
+        the subspace size as hyperparameters
+        """
         self.t = t
 
-        self.min_sup = min_sup
+        self.min_sup = 10
         self.n = n #pattern sample size
         self.m = m #subspace sample size
-        self.epochs = epochs
-        self.subspace_sampling = subspace_sampling
+        self.epochs = 5
         self.pattern_sets = None
 
+
     def fit(self, X):
+        """
+        Takes the data set X,  and fits the model by finding the frequent patterns
+        for t samples of size n. Returns the sets of frequent patterns.
+        """
         if len(np.unique(X)) <= 3:
             raise ValueError("Input data is not in distinct format")
         if len(np.unique(X)) > 80 and self.m == None:
@@ -33,29 +47,31 @@ class FPOFSampler:
                 subspace = np.random.choice(len(X[0]), self.m, replace=False)
                 FPS_sub = self.find_patterns(X[:,subspace], self.min_sup)
                 pattern_sum += len(FPS_sub)
-                for j in range(self.epochs): #how many subsamples are appropriate?
+                for j in range(self.epochs):
                     np.random.shuffle(FPS_sub)
                     pattern_sets.append(FPS_sub[:self.n])
-            #print("subspace sampling, avg # patterns:", pattern_sum / self.t)
 
         else:
             pattern_sets = [None] * self.t
             FPS = self.find_patterns(X, self.min_sup)
-            #print("total number of patterns:", len(FPS))
             for i in range(self.t):
                 np.random.shuffle(FPS)
                 pattern_sets[i] = FPS[:self.n]
 
-
-        #self.pattern_sets = pattern_sets
         return pattern_sets
 
 
     def find_patterns(self, X_i, min_sup):
+        """
+        Returns the frequent patterns for a sample X_i.
+        """
         return fpgrowth(X_i, target='s', supp=min_sup, zmin=1, zmax=5, report='S')
 
 
     def score_sample(self, x, patterns_i):
+        """
+        Calculates and returns the score of an instance x given patterns i.
+        """
         if len(patterns_i) == 0:
             return 0
         score_sum = 0
@@ -67,6 +83,10 @@ class FPOFSampler:
 
 
     def predict(self, X, pattern_sets):
+        """
+        Gives each instance in X an anomaly score based on the pattern sets.
+        Returns an array of scores for X.
+        """
 
         scores = [None] * len(X)
         for i in range(len(X)):
@@ -78,25 +98,3 @@ class FPOFSampler:
             scores[i] = score_sum /len(pattern_sets)
 
         return np.array(scores)
-        #return np.negative(scores)
-
-
-"""
-if __name__ == '__main__':
-    path = sys.argv[1]
-    df = pd.read_csv(path)
-    X = np.array(df.drop("label", axis=1))
-    print(X.shape)
-    print("unique values in X:", len(np.unique(X)))
-    labels = np.array(df['label'])
-
-
-    #fpof = FPOFSampler(100, 10, 10, 2, 25, True) # for high-dimensional data
-    fpof = FPOFSampler(10, 100)
-    pattern_sets = fpof.fit(X)
-    scores = fpof.predict(X, pattern_sets)
-    print(np.mean(scores[np.where(labels > 0)]))
-    print(np.mean(scores[np.where(labels < 0)]))
-    ind_auc = roc_auc_score(labels, scores)
-    print(ind_auc, np.mean(scores))
-"""

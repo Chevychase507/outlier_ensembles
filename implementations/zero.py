@@ -4,13 +4,22 @@ import pandas as pd
 from sklearn.metrics import roc_auc_score
 
 
-"""
-Designed for one hot encoded data sets
-"""
+
 
 class Zero:
+    """
+    Class Zero implements the Zero++ algorithm specifically for one hot encoded
+    data sets and with m fixed at 2. Original paper here:
+    https://www.jair.org/index.php/jair/article/download/11035/26206
 
-    def __init__(self, t=None, n=None):
+    """
+
+
+    def __init__(self, t, n):
+        """
+        Takes t, the number of samples, and n, the subsample size.
+        """
+
         self.t = t #number of probability tables
         self.n = n #subsample size
         self.m = 2 #m, standard subspace size
@@ -53,24 +62,24 @@ class Zero:
         in N_i.
         """
         h_i = {}
+        R_mark_2 = self.gen_subspaces()
         for i_pair in indices:
             N_i_subspace = np.vstack((N_i[:,i_pair[0]], N_i[:,i_pair[1]])).T #the transpose of the vertical stack
-            S_i = R_mark_2 #nonsense
-            #S_i_tup = [None] * len(S_i)
+            S_i = R_mark_2
+
             S_i_tup = {}
 
             for j in range(len(S_i)):
                 for k in range(len(N_i_subspace)):
                     if tuple(N_i_subspace[k]) == tuple(S_i[j]):
-                        #S_i_tup[j] = (S_i[j],1)
-                        S_i_tup[tuple(S_i[j])] = 0 #not zero appearances of N_i in S_i
+                        #not zero appearances of N_i in S_i
+                        S_i_tup[tuple(S_i[j])] = 0
                         break
 
                     else:
-                        #S_i_tup[j] = (S_i[j], 0)
-                        S_i_tup[tuple(S_i[j])] = 1 #zero appearances of N_i in S_i
+                        #zero appearances of N_i in S_i
+                        S_i_tup[tuple(S_i[j])] = 1
             h_i[i_pair] = S_i_tup
-
 
         return h_i
 
@@ -93,8 +102,7 @@ class Zero:
         for i in range(len(X)):
             scores[i] = self.score_instance(X[i])
 
-        #the score is negated to cater for the roc auc function
-        #return np.array(scores)
+        #the score is negated to match the auc function
         return np.negative(scores)
 
 
@@ -135,27 +143,3 @@ class Zero:
                       [0,1],
                       [1,0],
                       [1,1]])
-
-
-"""
-if __name__ == '__main__':
-    path1 = sys.argv[1]
-
-    df_bin = pd.read_csv(path1).sample(frac=1, random_state=700)
-    X = np.array(df_bin.drop("label", axis=1))
-    labels = np.array(df_bin['label'])
-
-    labels[labels == -1] = 0
-    print(labels)
-    t = 50
-    psi = 2 ** 3
-    zero = Zero(t, psi)
-    zero.fit(X)
-    scores = zero.score(X)
-
-
-    auc = roc_auc_score(labels, scores)
-    neg_auc = roc_auc_score(labels, np.negative(scores))
-
-    print("psi:", psi, ", auc:", auc, "neg auc:", neg_auc)
-"""

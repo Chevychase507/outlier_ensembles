@@ -97,7 +97,7 @@ def csv_auc(member_list, ensemble, the_labels, data, data_str, parameters, data_
             rank_preds = rank(preds)
             z_preds = z_score(preds)
             if len(member_list) % 2 != 0:
-                can_preds = cantelli_pred(preds)
+                can_preds = loc_thresh(preds)
 
             labels_ = sign_change(the_labels[test_idx])
 
@@ -203,7 +203,7 @@ def csv_topk(member_list, ensemble, labels, data, data_str, parameters, data_nam
             rank_preds = rank(preds)
             z_preds = z_score(preds)
             if len(member_list) % 2 != 0:
-                can_preds = cantelli_pred(preds)
+                can_preds = loc_thresh(preds)
 
             #write member scores
             for i in range(len(member_list)):
@@ -471,7 +471,7 @@ def print_performance(preds, labels, member_list, out_cnt):
 def run_ensemble(data_name, out_cnt, df_bin, df_str):
     """
     Takes the data set as dataframes in binary and string format.
-    Then it runs the ensemble. 
+    Then it runs the ensemble.
     """
 
     #split labels from data and make it np arrays
@@ -507,12 +507,11 @@ def run_ensemble(data_name, out_cnt, df_bin, df_str):
 
 
 if __name__ == '__main__':
-
     path1 = sys.argv[1]
     path2 = sys.argv[2]
     frac = 1
 
-    #if running a sample of data only
+    #can be given a third argument: the sample size in percent
     if len(sys.argv) > 3:
         frac = int(sys.argv[3]) / 100
 

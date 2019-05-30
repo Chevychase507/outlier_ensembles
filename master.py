@@ -53,14 +53,11 @@ def predict_ensemble(member_list, ensemble, data, distinct_data, fpof_patterns):
     return np.array(predictions)
 
 
-
-
 def find_best_params(data, distinct_data, labels, estimators, member_list, k):
     """
     Takes a data set in binary and distinct format together with the list of
     estimators. It then searches for the best hyperparameters for each method
     and returns a list of tuples containing the best parameters.
-
     """
 
     for i in range(len(member_list)):
@@ -69,17 +66,20 @@ def find_best_params(data, distinct_data, labels, estimators, member_list, k):
             #fpof needs a special hyperparameter search method
             params, auc = param_search_fpof(distinct_data, labels, k, estimators[member_list[i]])
             best_params.append((member_list[i], params, auc))
-
         else:
             params, auc = param_search(data, labels, k, estimators[member_list[i]], member_list[i])
             best_params.append((member_list[i], params, auc))
-
     return best_params
 
 
-def csv_auc(member_list, ensemble, the_labels, data, distinct_data, parameters, data_name, k):
+def csv_auc(member_list, ensemble, the_labels, data, data_str, parameters, data_name, k):
+    """
+    Takes the ensemble members and the data set. Peforms a k-fold cross validation
+    of each member and each ensemble constellation to find its top-k ratio.
+    Writes a .csv-file with the top-k ratio for each fold.
+    """
 
-    file_name = data_name + "_results.csv"
+    file_name = data_name + "_auc_results.csv"
 
     with open(file_name, 'w') as out:
         out.write("algoritm,params,ensemble,data_set,auroc,auprc\n")
@@ -89,17 +89,15 @@ def csv_auc(member_list, ensemble, the_labels, data, distinct_data, parameters, 
         for train_idx, test_idx in kf.split(data, the_labels):
             print(str(cnt) + "th epoch")
             cnt += 1
-            ensemble, fpof_patterns = fit_ensemble(member_list, ensemble, data[train_idx], distinct_data[train_idx])
-            preds = predict_ensemble(member_list, ensemble, data[test_idx], distinct_data[test_idx], fpof_patterns)
+            ensemble, fpof_patterns = fit_ensemble(member_list, ensemble, data[train_idx], data_str[train_idx])
+            preds = predict_ensemble(member_list, ensemble, data[test_idx], data_str[test_idx], fpof_patterns)
 
-            preds = np.negative(preds) #flip to accommodate auc
+            preds = np.negative(preds)
             norm_preds = min_max(preds)
             rank_preds = rank(preds)
             z_preds = z_score(preds)
             if len(member_list) % 2 != 0:
                 can_preds = cantelli_pred(preds)
-            #precision, recall, thresholds = precision_recall_curve(labels[test_idx], predictions)
-            #pr_auc = auc(recall, precision)
 
             labels_ = sign_change(the_labels[test_idx])
 
@@ -114,7 +112,6 @@ def csv_auc(member_list, ensemble, the_labels, data, distinct_data, parameters, 
 
                 out.write(member_list[j] + "," +  str(parameters[member_list[j]]).replace(",", ";") + "," + "0" + "," +
                 data_name + "," + str(raw_auroc) + "," + str(raw_auprc) + "\n")
-
 
             #min_max --> avg
             min_max_avg_auroc = roc_auc_score(labels_, comb_by_avg(norm_preds))
@@ -145,7 +142,6 @@ def csv_auc(member_list, ensemble, the_labels, data, distinct_data, parameters, 
             out.write("E_rank_max" + "," +  "all_members,1" + "," + data_name + "," + str(rank_max_auroc) + "," + str(rank_max_auprc) + "\n")
 
             #z_score --> avg
-
             z_avg_auroc = roc_auc_score(labels_, comb_by_avg(z_preds))
             p, r, t = precision_recall_curve(labels_, comb_by_avg(z_preds))
             z_avg_auprc = auc(r, p)
@@ -181,8 +177,13 @@ def csv_auc(member_list, ensemble, the_labels, data, distinct_data, parameters, 
                 out.write("E_majority" + "," +  "all_members,1" + "," + data_name + "," + str(maj_auroc) + "," + str(maj_auprc) + "\n")
 
 
+def csv_topk(member_list, ensemble, labels, data, data_str, parameters, data_name, out_cnt, k):
+    """
+    Takes the ensemble members and the data set. Peforms a k-fold cross validation
+    of each member and each ensemble constellation to find its top-k ratio.
+    Writes a .csv-file with the top-k ratio for each fold.
+    """
 
-def csv_topk(member_list, ensemble, the_labels, data, distinct_data, parameters, data_name, out_cnt, k):
     file_name = data_name + "_topk_results.csv"
 
     with open(file_name, 'w') as out:
@@ -190,13 +191,13 @@ def csv_topk(member_list, ensemble, the_labels, data, distinct_data, parameters,
 
         kf = StratifiedKFold(n_splits=k)
         cnt = 0
-        for train_idx, test_idx in kf.split(data, the_labels):
+        for train_idx, test_idx in kf.split(data, labels):
             print(cnt, "th epoch at", data_name)
             cnt += 1
             out_cnt = len(labels[test_idx][labels[test_idx] == -1])
 
-            ensemble, fpof_patterns = fit_ensemble(member_list, ensemble, data[train_idx], distinct_data[train_idx])
-            preds = predict_ensemble(member_list, ensemble, data[test_idx], distinct_data[test_idx], fpof_patterns)
+            ensemble, fpof_patterns = fit_ensemble(member_list, ensemble, data[train_idx], data_str[train_idx])
+            preds = predict_ensemble(member_list, ensemble, data[test_idx], data_str[test_idx], fpof_patterns)
             preds = np.negative(preds)
             norm_preds = min_max(preds)
             rank_preds = rank(preds)
@@ -204,17 +205,12 @@ def csv_topk(member_list, ensemble, the_labels, data, distinct_data, parameters,
             if len(member_list) % 2 != 0:
                 can_preds = cantelli_pred(preds)
 
-
-
-
-
+            #write member scores
             for i in range(len(member_list)):
                 tp_k = top_k(preds[i], labels[test_idx], out_cnt)
                 out.write(member_list[i] + "," +  str(parameters[member_list[i]]).replace(",", ";") + "," + "0" + "," +
                 data_name + "," + str(tp_k) + "\n")
 
-            #print(preds[4])
-            #print(labels[test_idx])
 
             #min_max --> avg
             tp_k = top_k(comb_by_avg(norm_preds), labels[test_idx], out_cnt)
@@ -224,13 +220,11 @@ def csv_topk(member_list, ensemble, the_labels, data, distinct_data, parameters,
             tp_k = top_k(comb_by_min(norm_preds), labels[test_idx], out_cnt)
             out.write("E_minmax_max" + "," +  "all_members,1" + "," + data_name + ","  + str(tp_k) + "\n")
 
-
             #rank --> avg
             tp_k = top_k(comb_by_avg(rank_preds), labels[test_idx], out_cnt)
             out.write("E_rank_avg" + "," +  "all_members,1" + "," + data_name + ","  + str(tp_k) + "\n")
 
             #rank --> max
-
             tp_k = top_k(comb_by_min(rank_preds), labels[test_idx], out_cnt)
             out.write("E_rank_max" + "," +  "all_members,1" + "," + data_name + "," + str(tp_k) + "\n")
 
@@ -257,28 +251,37 @@ def csv_topk(member_list, ensemble, the_labels, data, distinct_data, parameters,
                 out.write("E_majority" + "," +  "all_members,1" + "," + data_name + "," + str(tp_k) + "\n")
 
 
-
-
 def choose_params(data_name):
     """
-    BEST PARAMS for each method at each data set
+    Takes a name of a data set and returns a dictionary with the best hyper-
+    parameters each ensemble member
     """
     if "spect" in data_name:
-        return {"ocsvm":('sigmoid', 0.0078125, 0.1), "zero": (10, 128), "iForest":(10, 2, "new"), "LOF":(30, 0.1,'sokalsneath'), 'fpof':(10, 2)}
+        return {"ocsvm":('sigmoid', 0.0078125, 0.1), "zero": (10, 128),
+        "iForest":(10, 2, "new"), "LOF":(30, 0.1,'sokalsneath'), 'fpof':(10, 2)}
     elif "nurse" in data_name:
-        return {"ocsvm":('rbf', 0.5, 0.7), "zero": (50, 8), "iForest":(80, 256, "new"), "LOF":(90, 0.1,'minkowski'), 'fpof':(10, 1024)}
+        return {"ocsvm":('rbf', 0.5, 0.7), "zero": (50, 8),
+        "iForest":(80, 256, "new"), "LOF":(90, 0.1,'minkowski'), 'fpof':(10, 1024)}
     elif "chess" in data_name:
-        return {"ocsvm":('rbf', 0.015625, 0.8), "zero": (60, 32), "iForest":(70, 1024, "new"), "LOF":(30, 0.1,'jaccard'), 'fpof':(40, 16)}
+        return {"ocsvm":('rbf', 0.015625, 0.8), "zero": (60, 32),
+        "iForest":(70, 1024, "new"), "LOF":(30, 0.1,'jaccard'), 'fpof':(40, 16)}
     elif "mushroom" in data_name:
-        return {"ocsvm":('rbf', 0.5, 0.9), "zero": (40, 2), "iForest":(70, 32, "new"), "LOF":(90, 0.1,'minkowski'), 'fpof':(50, 32, 20)}
+        return {"ocsvm":('rbf', 0.5, 0.9), "zero": (40, 2),
+        "iForest":(70, 32, "new"), "LOF":(90, 0.1,'minkowski'), 'fpof':(50, 32, 20)}
     elif "solar" in data_name:
-        return {"ocsvm":('rbf', 0.5, 0.9), "zero": (40, 2), "iForest":(10, 2, "new"), "LOF":(90, 0.1,'minkowski'), 'fpof':(10, 16)}
-
+        return {"ocsvm":('rbf', 0.5, 0.9), "zero": (40, 2),
+        "iForest":(10, 2, "new"), "LOF":(90, 0.1,'minkowski'), 'fpof':(10, 16)}
     else:
-        return {"ocsvm":('rbf', 0.0078125, 0.9), "zero": (50, 16), "iForest":(10, 2, "new"), "LOF":(60, 0.1,'sokalsneath'), 'fpof':(10, 8, 15)}
+        return {"ocsvm":('rbf', 0.0078125, 0.9), "zero": (50, 16),
+        "iForest":(10, 2, "new"), "LOF":(60, 0.1,'sokalsneath'), 'fpof':(10, 8, 15)}
 
 
 def init_members(member_list, parameters):
+    """
+    Initializes the members of the ensemble according to the member list given
+    and the parameters. Returns a list of initialized ensemble members
+    """
+
     members = []
     for i in range(len(member_list)):
         if 'ocsvm' == member_list[i]:
@@ -301,40 +304,11 @@ def init_members(member_list, parameters):
             members.append(fpof)
     return members
 
-def write_preds(preds, member_list, labels, data_name):
-
-    file_name = data_name + " preds.csv"
-    memb_str = ",".join(member_list)
-
-    with open(file_name, 'w') as out:
-        out.write("data_name," + memb_str + ",label\n")
-        for i in range(len(preds[0])):
-            out.write(data_name + "," + str(preds[0][i]) + "," + str(preds[1][i]) +  "," +
-             str(preds[2][i]) + "," + str(preds[3][i]) + "," + str(preds[4][i]) + "," + str(labels[i]) + "\n" )
-
-
-
-def plot_preds(preds, member_list, data_name):
-
-    for i in range(len(member_list)):
-        mean_ = np.mean(preds[i])
-        #std_pos = mean_ + np.std(preds[i]) * 2
-        std_neg = mean_ - np.std(preds[i]) * 2
-        n, bins, patches = plt.hist(preds[i], bins='auto', facecolor='g')
-        title = "Anomaly scores of " + member_list[i] + " on " + data_name
-        plt.title(title)
-        plt.axvline(mean_, color='k', linestyle='solid', linewidth=1)
-        plt.axvline(std_neg, color='k', linestyle='dashed', linewidth=1)
-        #plt.axvline(std_pos, color='k', linestyle='dashed', linewidth=1)
-        plt.xlabel('Anomaly score')
-        plt.ylabel('Frequency')
-        plt.grid(True)
-        plt.show()
-
 
 def csv_preds(preds, labels, member_list, data_name):
     """
-    writes file for OCSVM results and mm-avg ensemble
+    Writes .csv file with the ensemble predictions, which is used for
+    visualizations.
     """
     file_name = data_name + "_preds.csv"
 
@@ -345,28 +319,22 @@ def csv_preds(preds, labels, member_list, data_name):
         out.write("data_name,Algorithm,Score,Label\n")
         for i in range(len(member_list)):
             for j in range(len(preds[0])):
-                out.write(data_name + "," + str(member_list[i]) + "," + str(norm_preds[i][j]) + "," + str(labels[j]) + "\n")
+                out.write(data_name + "," + str(member_list[i]) + "," +
+                 str(norm_preds[i][j]) + "," + str(labels[j]) + "\n")
 
 
+def sort_forward_feed(member_list, ensemble, df_bin, df_str, labels, out_cnt, data_name):
+    """
+    Takes the ensemble members and the data set in binary and string format.
+    Sorts the features by variance and feeds them to the ensemble members
+    one by one. Writes a .csv file with the results.
+    """
 
-
-
-def mush_print(preds, labels):
-    preds = min_max(preds)
-    ens = comb_by_avg(preds)
-    for i in range(100):
-        print(round(1 - preds[0][i],3), round(1 - preds[1][i],3),round( 1 - preds[2][i],3), round( 1 - preds[3][i],3), round(1 -  preds[4][i],3), round( 1 - ens[i], 3), labels[i])
-
-
-
-def sort_forward_feed(member_list, ensemble, df_bin, df_dist, labels, out_cnt, data_name):
-    sorted_feats = sort_by_variance(df_bin, list(df_bin.columns), .0)
-    print(df_bin.shape)
-
+    df_bin = df_bin.drop("label", axis=1)
+    df_str = df_str.drop("label", axis=1)
+    sorted_feats = sort_by_variance(df_bin, list(df_bin.columns), .0, True)
     file_name = data_name + "_" + member_list[0] + "sort_forward_feed_ascending.csv"
-    #labels = sign_change(labels)
 
-    print(labels)
 
     with open(file_name, 'w') as out:
         out.write("n_feats,algorithm,auprc_mean,auprc_std,top_k_mean,top_k_std\n")
@@ -377,26 +345,23 @@ def sort_forward_feed(member_list, ensemble, df_bin, df_dist, labels, out_cnt, d
             for m in range(10):
 
                 data = np.array(df_bin[sorted_feats[:i]])
-                distinct_data = np.array(df_dist[sorted_feats[:i]])
-                print(data.shape)
+                data_str = np.array(df_str[sorted_feats[:i]])
 
-                ensemble, fpof_patterns = fit_ensemble(member_list, ensemble, data, distinct_data)
-                preds = predict_ensemble(member_list, ensemble, data, distinct_data, fpof_patterns)
+                ensemble, fpof_patterns = fit_ensemble(member_list, ensemble, data, data_str)
+                preds = predict_ensemble(member_list, ensemble, data, data_str, fpof_patterns)
                 preds = np.negative(min_max(preds))
 
-                p, r, _ = precision_recall_curve(labels, preds[0], pos_label=-1)
+                p, r, _ = precision_recall_curve(labels, preds[4], pos_label=-1)
                 prc_results[m] = auc(r,p)
-                topk_results[m] = top_k(preds[0], labels, out_cnt)
+                topk_results[m] = top_k(preds[4], labels, out_cnt)
 
                 print(i, prc_results[m], topk_results[m])
 
             topk_results = np.array(topk_results)
             prc_results = np.array(prc_results)
 
-
-            out.write(str(i) + "," + member_list[0] + "," + str(np.mean(prc_results)) + "," +
+            out.write(str(i) + "," + member_list[4] + "," + str(np.mean(prc_results)) + "," +
                  str(np.std(prc_results)) + "," + str(np.mean(topk_results)) + "," + str(np.std(topk_results)) + "\n")
-
 
 
 def rfe(df_bin, labels, out_cnt):
@@ -404,7 +369,8 @@ def rfe(df_bin, labels, out_cnt):
     Takes the binary data and does recursive feature ranking using
     the coef_ attribute from OCSVM with a linear kernel. Prints results
     before and after the features are selected. Designed for optimizing
-    fraud webshops results
+    fraud webshops results. Returns the indices for the best features
+    according to the recursive feature selector.
     """
     X = np.array(df_bin.drop("label", axis=1))
 
@@ -423,7 +389,8 @@ def rfe(df_bin, labels, out_cnt):
     z_preds = min_max([z_preds])[0]
 
     print("**** BEFORE **** ")
-    #calc measures
+
+
     p, r, _ = precision_recall_curve(sign_change(labels), np.negative(o_preds))
     auc_ = auc(r,p)
     tpk = top_k(np.negative(o_preds), labels, out_cnt)
@@ -436,26 +403,26 @@ def rfe(df_bin, labels, out_cnt):
     print("ZERO PR AUC and TOP K:", auc_, tpk)
 
 
-
+    #Select features w. RFE
     estimator = OneClassSVM(kernel="linear", gamma=0.0078125, nu=0.9)
     selector = RFE(estimator, step=1)
     selector = selector.fit(X, labels)
     idx = selector.support_
-
-
     X = X[:,idx]
 
     print("**** AFTER **** ")
 
+    #fit and predict
     ocsvm.fit(X)
-
-    o_preds = ocsvm.score_samples(X)
-    o_preds = min_max([o_preds])[0]
-
     zero.fit(X)
+    o_preds = ocsvm.score_samples(X)
     z_preds = zero.predict(X)
+
+    #normalize predictions
+    o_preds = min_max([o_preds])[0]
     z_preds = min_max([z_preds])[0]
 
+    #calc measures
     p, r, _ = precision_recall_curve(sign_change(labels), np.negative(o_preds))
     auc_ = auc(r,p)
     tpk = top_k(np.negative(o_preds), labels, out_cnt)
@@ -470,13 +437,11 @@ def rfe(df_bin, labels, out_cnt):
     return idx
 
 
-
 def print_performance(preds, labels, member_list, out_cnt):
     """
     Takes the predictions from the ensemble and prints the ROC AUC,
     PR AUC and top-k ratio score
     """
-
 
     for i in range(len(member_list)):
         print("*****", member_list[i], "*****")
@@ -491,7 +456,7 @@ def print_performance(preds, labels, member_list, out_cnt):
         print("TOP K ratio", round(tp_k, 3))
         print()
 
-    print("****** MM-AVG ensemble ********")
+    print("**** MM-AVG ensemble ******")
     ROC_AUC = roc_auc_score(labels, comb_by_avg(min_max(preds)))
     p, r, _ = precision_recall_curve(labels,
     comb_by_avg(min_max(np.negative(preds))), pos_label=-1)
@@ -506,7 +471,7 @@ def print_performance(preds, labels, member_list, out_cnt):
 def run_ensemble(data_name, out_cnt, df_bin, df_str):
     """
     Takes the data set as dataframes in binary and string format.
-    Then it runs the ensemble.
+    Then it runs the ensemble. 
     """
 
     #split labels from data and make it np arrays
@@ -525,20 +490,20 @@ def run_ensemble(data_name, out_cnt, df_bin, df_str):
     ensemble = init_members(member_list, parameters)
 
 
-    #fit and predict
+    #fit, predict and print performance metrics
     ensemble, fpof_patterns = fit_ensemble(member_list, ensemble, data, data_str)
     preds = predict_ensemble(member_list, ensemble, data, data_str, fpof_patterns)
-
-    #print out the performance metrics
     print_performance(preds, labels, member_list, out_cnt)
 
 
-    #rfe(df_bin, labels, out_cnt)
-
-
-
-
-
+    #alternative methods
+    """
+    csv_preds(preds, labels, member_list, data_name)
+    rfe(df_bin, labels, out_cnt)
+    sort_forward_feed(member_list, ensemble, df_bin, df_str, labels, out_cnt, data_name)
+    csv_topk(member_list, ensemble, labels, data, data_str, parameters, data_name, out_cnt, 10)
+    csv_auc(member_list, ensemble, labels, data, data_str, parameters, data_name, 10)
+    """
 
 
 if __name__ == '__main__':
@@ -551,7 +516,8 @@ if __name__ == '__main__':
     if len(sys.argv) > 3:
         frac = int(sys.argv[3]) / 100
 
-    data_name = path1.split("/")[-1].split(".")[0]
+    data_name = path1.split("/")[-1].split("_")[0]
+
 
     seed = 2019
     df_bin = pd.read_csv(path1).sample(frac=frac, random_state=seed)

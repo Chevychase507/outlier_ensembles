@@ -10,7 +10,7 @@ warnings.filterwarnings("ignore", category=FutureWarning)
 warnings.filterwarnings("ignore", category=UserWarning)
 
 
-def sort_by_variance(df, feats, t):
+def sort_by_variance(df, feats, t, desc):
     """
     Takes a df and a list of feats. It sorts the list of feats by their variance
     in descending order. It returns a sorted list of feats whose variance is above t.
@@ -28,8 +28,8 @@ def sort_by_variance(df, feats, t):
             cand_feats.append(feats[i])
 
 
-    #sorted_feats = [x for _,x in sorted(zip(var_list,cand_feats), reverse=True)]
-    sorted_feats = [x for _,x in sorted(zip(var_list,cand_feats))]
+    sorted_feats = [x for _,x in sorted(zip(var_list,cand_feats), reverse=True)]
+    #sorted_feats = [x for _,x in sorted(zip(var_list,cand_feats))]
 
     return sorted_feats
 

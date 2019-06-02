@@ -24,7 +24,7 @@ The program can be run by the following command:
 python3 master.py "binary_data" "string_data" "optional: percentage"
 
 It will output the ROC AUC, PR AUC and the top-k ratio of the methods
-when applied to the data set given. the "percentage" argument gives the
+when applied to the data set given. The "percentage" argument gives the
 percentage of data which will be used when the program is run.
 
 ## data
